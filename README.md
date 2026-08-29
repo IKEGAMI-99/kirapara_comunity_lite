@@ -19,6 +19,18 @@
 - API認証値をフロントエンドへ出さない構成
 - Feed Provider方式で将来のタブ追加に対応
 
+## 現在のAPI疎通状況
+
+GitHub ActionsからSSP APIへ到達し、JSONのretcodeが返るところまでは確認済みです。
+
+キャプチャ時の古い`timestamp`と`sign`をそのまま再利用すると`retcode=40020`、現在時刻へ差し替えて同じ`sign`を使うと`retcode=40021`になりました。
+
+このため、現時点では**キャプチャしたsignは固定値として長期再利用できず、timestampまたはセッション状態と関連している可能性が高い**と判断しています。正式なエラーコードの意味は未確認なので断定はしていません。
+
+完全自動更新にはsign生成方式の追加解析が必要です。取得失敗時はActionsを失敗扱いにせず、直前の公開Feedを維持します。
+
+詳しい観測結果は [TECH_SPEC.md](./TECH_SPEC.md) に記録しています。
+
 ## 構成
 
 ```text
@@ -78,9 +90,9 @@ https://ikegami-99.github.io/kirapara_comunity_lite/
 | Secret | 初期値 / 用途 |
 |---|---|
 | `KRPR_GAME_ID` | 未設定なら`22701201` |
-| `KRPR_TIMESTAMP` | 未設定なら実行時の現在時刻(ms)。キャプチャしたtimestampを固定して試す場合に指定 |
+| `KRPR_TIMESTAMP` | キャプチャ時の再現試験用。未設定なら実行時の現在時刻(ms) |
 
-Secrets未設定時はAPIアクセスを行わず、直前の `gh-pages` に公開済みのFeedがあればそれを維持します。初回で公開済みFeedもない場合は空表示です。
+Secrets未設定時やAPI取得失敗時は、直前の `gh-pages` に公開済みのFeedがあればそれを維持します。初回で公開済みFeedもない場合は空表示です。
 
 ### 重要
 
