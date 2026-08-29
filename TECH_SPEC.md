@@ -68,27 +68,45 @@ momentId
 replyId
 ```
 
-## GitHub Actionsからの再現試験
+## sign / timestamp の観測
 
-キャプチャ時と同じ`serverId`、`gameId`、`userId`、`roleId`、`sign`、`timestamp`をGitHub Actionsから`getDiscoveryList`へ送信したところ、HTTP通信自体は成功し、APIからJSONのretcodeが返ることを確認しました。
-
-観測結果:
+同一時刻に観測した以下の異なるSSP APIで、同じ`timestamp`と同じ`sign`が使われていました。
 
 ```text
-キャプチャ時の古い timestamp + キャプチャ時の sign
-→ retcode 40020
-
-現在時刻の timestamp + 同じ sign
-→ retcode 40021
+/ss/getDiscoveryList
+/ss/queryCoOutfitNews
 ```
 
-この差分から、少なくとも以下が強く示唆されます。
+このため、`sign`はendpoint単位の署名ではなく、セッションまたは一定時間単位で複数SSP APIに共有される値である可能性が高いです。
 
+別の時刻に再キャプチャすると`timestamp`と`sign`の両方が変化しました。
+
+## GitHub Actionsからの再現試験
+
+GitHub Actionsから`getDiscoveryList`へ同一ユーザー条件でアクセスし、以下を確認しました。
+
+```text
+古い timestamp + その時の sign
+→ retcode 40020
+
+現在時刻 + 古い sign
+→ retcode 40021
+
+新しくキャプチャした timestamp + 同時に取得した新しい sign
+→ retcode 0 / 成功
+```
+
+成功時にはGitHub Actionsからおすすめ投稿12件を取得し、`gh-pages/data/discovery.json`へ正常に保存できました。
+
+この結果から現時点でかなり強く言えること:
+
+- 新鮮な`timestamp + sign`の組は、ゲーム端末ではなくGitHub Actions上の外部ホストからも再利用できる
+- 少なくとも今回の試験では送信元IPや端末そのものへの強い固定は確認されなかった
 - `timestamp`には鮮度チェック / 有効期限がある可能性が高い
 - `sign`は固定値ではなく、`timestamp`またはセッション状態と関連している可能性が高い
-- キャプチャしたsignを長期間そのまま再利用する方式では自動運用できない可能性が高い
+- 古いsignだけを長期間Secretsへ固定する方式では完全自動更新できない可能性が高い
 
-ただし、`40020`と`40021`の正式な意味は未確認です。現時点ではエラーコードの意味を断定しません。
+ただし、`40020`と`40021`の正式な意味は未確認です。エラーコードの意味そのものは断定しません。
 
 クライアントは診断用に、固定timestampで`40020`を受けた場合のみ現在時刻で1回再試行します。両方失敗した場合は既存の公開Feedを維持します。
 
@@ -109,6 +127,7 @@ APIレスポンスではHTTP URLが返る例があるため、HTTPSのGitHub Pag
 - `sign`の生成方式
 - `sign`生成に使われる秘密値 / セッショントークンの有無
 - `timestamp`の許容時間幅
+- `sign`が更新される正確な条件 / 周期
 - Discoveryのページネーション
 - 新着 / 人気 / フォロー / 検索などのendpoint
 - `getmomentreplylist`の`replyId`のページネーション仕様
@@ -117,11 +136,12 @@ APIレスポンスではHTTP URLが返る例があるため、HTTPSのGitHub Pag
 
 ## 次の解析優先順位
 
-1. PCAPdroidで新しい`getDiscoveryList`を2回以上取得し、`timestamp`と`sign`の変化を比較
-2. 同一セッション内で数秒〜数分離れたリクエストのsignを比較
-3. 同一timestampで別endpointを呼んだ場合のsignを比較
-4. 必要ならAPK / UEネイティブコード内のsign生成処理を解析
-5. signをサーバー側で生成できるようになってから完全自動更新へ移行
+1. 同一ゲームセッションで時間を空けて`getDiscoveryList`を複数回取得し、`timestamp`と`sign`の更新周期を比較
+2. signが変わる瞬間を特定する
+3. 同一timestampでさらに複数endpointのsign共有範囲を確認
+4. `timestamp`の許容時間幅を安全な範囲で確認
+5. 必要ならAPK / UEネイティブコード内のsign生成処理を解析
+6. signをサーバー側で生成または安全に更新できるようになってから完全自動更新へ移行
 
 ## 拡張方針
 
