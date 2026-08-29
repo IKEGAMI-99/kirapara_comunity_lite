@@ -12,7 +12,9 @@
 - 投稿者名、アイコン、タイトル、本文、最大6枚の画像を表示
 - vote数、コメント数、保存数を表示
 - 15分ごとにGitHub Actionsで更新
-- GitHub Pagesへ自動デプロイ
+- 生成済みサイトを `gh-pages` ブランチへ自動発行
+- 前回正常取得したFeedを復元してから更新し、認証未設定時や取得不能時に既存公開データを不用意に消さない
+- APIパーサー / 正規化処理の自己テストをCIで実行
 - 巨大な`momentId`を文字列として保持し、JavaScriptの整数精度問題を回避
 - API認証値をフロントエンドへ出さない構成
 - Feed Provider方式で将来のタブ追加に対応
@@ -20,16 +22,17 @@
 ## 構成
 
 ```text
-.github/workflows/deploy-pages.yml  定期取得 + Pagesデプロイ
+.github/workflows/deploy-pages.yml  定期取得 + gh-pages発行
 scripts/
   fetch-feed.mjs                   共通Feed取得エントリ
+  self-test.mjs                    パーサー / 正規化の自己テスト
   lib/
     kirapara-client.mjs            SSP APIクライアント
     normalize.mjs                  公開用データへ正規化
   providers/
     discovery.mjs                  おすすめFeed Provider
 docs/
-  index.html                       GitHub Pages本体
+  index.html                       静的サイト本体
   app.js                           タブ / 投稿カード描画
   styles.css                       UI
   data/discovery.json              公開用キャッシュ
@@ -38,17 +41,24 @@ TECH_SPEC.md                       現在判明している通信仕様
 
 ## GitHub Pagesを有効にする
 
-このリポジトリのGitHubで次を設定します。
+ActionsはPages APIを直接有効化せず、公開用ファイルを `gh-pages` ブランチへ発行します。
+
+初回のみ、このリポジトリのGitHubで次を設定してください。
 
 1. `Settings` → `Pages`
 2. `Build and deployment`
-3. `Source` を **GitHub Actions** にする
+3. `Source` を **Deploy from a branch**
+4. Branchを **`gh-pages`**
+5. Folderを **`/ (root)`**
+6. `Save`
 
 デプロイ後のURLは通常次の形式です。
 
 ```text
 https://ikegami-99.github.io/kirapara_comunity_lite/
 ```
+
+`gh-pages` ブランチ自体はActionsが自動生成・更新します。
 
 ## Actions Secrets
 
@@ -70,7 +80,7 @@ https://ikegami-99.github.io/kirapara_comunity_lite/
 | `KRPR_GAME_ID` | 未設定なら`22701201` |
 | `KRPR_TIMESTAMP` | 未設定なら実行時の現在時刻(ms)。キャプチャしたtimestampを固定して試す場合に指定 |
 
-Secretsが未設定の場合でもPages自体はデプロイできますが、投稿データは空のままです。
+Secrets未設定時はAPIアクセスを行わず、直前の `gh-pages` に公開済みのFeedがあればそれを維持します。初回で公開済みFeedもない場合は空表示です。
 
 ### 重要
 
@@ -78,9 +88,19 @@ Secretsが未設定の場合でもPages自体はデプロイできますが、�
 
 ## 手動更新
 
-`Actions` → `Refresh community and deploy Pages` → `Run workflow` で即時更新できます。
+`Actions` → `Refresh community and publish site` → `Run workflow` で即時更新できます。
 
 通常は15分間隔で自動実行します。
+
+## 自己テスト
+
+以下でAPI JSONの64-bit ID保持、画像URLのHTTPS化、投稿正規化をテストできます。
+
+```bash
+node scripts/self-test.mjs
+```
+
+ActionsでもFeed取得前に毎回実行します。
 
 ## ローカル確認
 
