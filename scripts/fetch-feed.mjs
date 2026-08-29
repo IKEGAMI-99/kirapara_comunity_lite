@@ -23,7 +23,15 @@ if (!hasCredentials()) {
   process.exit(0);
 }
 
-const result = await provider.fetchPage();
+let result;
+try {
+  result = await provider.fetchPage();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`Feed refresh failed; keeping the existing published data. ${message}`);
+  process.exit(0);
+}
+
 const payload = {
   meta: {
     feed: provider.id,
@@ -38,6 +46,6 @@ const payload = {
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 
-// Read-back catches accidental path/encoding mistakes in CI before deploy.
+// Read-back catches accidental path/encoding mistakes in CI before publish.
 JSON.parse(await readFile(outputPath, 'utf8'));
 console.log(`Wrote ${result.posts.length} ${provider.label} posts to ${outputPath}`);
