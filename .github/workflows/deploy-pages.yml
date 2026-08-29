@@ -1,0 +1,58 @@
+name: Refresh community and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Refresh Discovery feed
+        env:
+          KRPR_SERVER_ID: ${{ secrets.KRPR_SERVER_ID }}
+          KRPR_GAME_ID: ${{ secrets.KRPR_GAME_ID }}
+          KRPR_SIGN: ${{ secrets.KRPR_SIGN }}
+          KRPR_TIMESTAMP: ${{ secrets.KRPR_TIMESTAMP }}
+          KRPR_USER_ID: ${{ secrets.KRPR_USER_ID }}
+          KRPR_ROLE_ID: ${{ secrets.KRPR_ROLE_ID }}
+        run: node scripts/fetch-feed.mjs discovery
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "feed": "discovery",
+    "label": "おすすめ",
+    "updatedAt": null,
+    "count": 0,
+    "nextCursor": null
+  },
+  "posts": []
+}
