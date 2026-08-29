@@ -20,9 +20,8 @@ export function getCredentials() {
     sign: requiredEnv('KRPR_SIGN'),
     userId: requiredEnv('KRPR_USER_ID'),
     roleId: requiredEnv('KRPR_ROLE_ID'),
-    // Some captures show one timestamp reused across several requests. Keep an
-    // override until the signing behaviour is understood; otherwise use now.
     timestamp: process.env.KRPR_TIMESTAMP?.trim() || String(Date.now()),
+    hasFixedTimestamp: Boolean(process.env.KRPR_TIMESTAMP?.trim()),
   };
 }
 
@@ -43,19 +42,17 @@ export function parseApiJson(text) {
     'npcId',
   ];
 
-  const pattern = new RegExp(`("(?:${idKeys.join('|')})"\\s*:\\s*)(-?\\d+)`, 'g');
-  return JSON.parse(text.replace(pattern, '$1"$2"'));
+  const pattern = new RegExp(`(\"(?:${idKeys.join('|')})\"\\s*:\\s*)(-?\\d+)`, 'g');
+  return JSON.parse(text.replace(pattern, '$1\"$2\"'));
 }
 
-export async function postSsp(endpoint, extraParams = {}) {
-  const credentials = getCredentials();
+async function requestSsp(endpoint, credentials, extraParams, timestamp) {
   const url = new URL(endpoint, credentials.baseUrl);
-
   const params = {
     serverId: credentials.serverId,
     gameId: credentials.gameId,
     sign: credentials.sign,
-    timestamp: credentials.timestamp,
+    timestamp,
     userId: credentials.userId,
     roleId: credentials.roleId,
     ...extraParams,
@@ -81,10 +78,35 @@ export async function postSsp(endpoint, extraParams = {}) {
     throw new Error(`SSP HTTP ${response.status}: ${text.slice(0, 500)}`);
   }
 
-  const json = parseApiJson(text);
-  if (json?.retcode !== 0) {
-    throw new Error(`SSP retcode=${json?.retcode ?? 'unknown'}: ${text.slice(0, 500)}`);
+  return { json: parseApiJson(text), text };
+}
+
+export async function postSsp(endpoint, extraParams = {}) {
+  const credentials = getCredentials();
+
+  let result = await requestSsp(
+    endpoint,
+    credentials,
+    extraParams,
+    credentials.timestamp,
+  );
+
+  // The first GitHub-side replay returned retcode 40020 with the captured
+  // timestamp. Try one controlled request using the current millisecond time.
+  // This helps distinguish timestamp freshness from a stale sign/session.
+  if (result.json?.retcode === 40020 && credentials.hasFixedTimestamp) {
+    const currentTimestamp = String(Date.now());
+    if (currentTimestamp !== credentials.timestamp) {
+      console.warn('SSP retcode=40020 with fixed timestamp; retrying once with current timestamp.');
+      result = await requestSsp(endpoint, credentials, extraParams, currentTimestamp);
+    }
   }
 
-  return json;
+  if (result.json?.retcode !== 0) {
+    throw new Error(
+      `SSP retcode=${result.json?.retcode ?? 'unknown'}: ${result.text.slice(0, 500)}`,
+    );
+  }
+
+  return result.json;
 }
